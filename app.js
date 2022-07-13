@@ -42,20 +42,29 @@ app.use(
   })
 );
 
-// const mongoose = require('mongoose')
-
-console.log(process.env.Node_ENV);
-
-const timeZoneRouter = require("./routes/timeZoneRouter");
+const userRouter = require("./routes/timezoneRouter");
 
 app.use(express.static("public/img/users"));
 
+app.use("/api/v1/images", express.static("public/img/users"));
 
-app.use("/api/v1/timezone", timeZoneRouter);
+
+app.use("/api/v1/user", userRouter);
+
+
+
+
+
+
+
+
+
 
 app.use("*", (req, res, next) => {
   next(new AppError(`Can't find ${req.originalUrl} on this server`, 404));
 });
+
+
 
 app.use(globalErrorHandler);
 
