@@ -1,38 +1,71 @@
 const catchAsync = require("../utilis/catchAsync");
 const AppError = require("../utilis/appError");
+const Regions = require("../utilis/regions");
+
 let timezone = require("../models/timezone.model");
+const fetch = require("node-fetch");
+
 
 var moment = require('moment');
 
 exports.getAllTimezones = catchAsync(async (req, res, next) => {
-    const doc = await timezone.find();
-    if (!doc) {
+    const regions = Regions;
+    if (!regions) {
         return next(new AppError("No document found", 404));
     }
     res.status(200).json({
         status: "success",
         message: "Documents fetched!",
         data: {
-            doc
+            regions
         }
     });
 });
+const getHoliday = async (zone) => {
+    // console.log(zone)
+    const BASE_CALENDAR_URL = "https://www.googleapis.com/calendar/v3/calendars";
+    const BASE_CALENDAR_ID_FOR_PUBLIC_HOLIDAY =
+        "holiday@group.v.calendar.google.com"; // Calendar Id. This is public but apparently not documented anywhere officialy.
+    const API_KEY = "AIzaSyAuS2w0bGLnH_4smxcfEQpW15wODksXk-c";
+    const CALENDAR_REGION = `en.${zone}`;
+
+    const url = `${BASE_CALENDAR_URL}/${CALENDAR_REGION}%23${BASE_CALENDAR_ID_FOR_PUBLIC_HOLIDAY}/events?key=${API_KEY}`
+    const response = await fetch(url)
+    const json = await response.json()
+
+    return json
+
+};
 
 exports.checkForOverLaps = catchAsync(async (req, res, next) => {
     let dates = req.body.dates;
     const recordedDates = [];
     const allAvailableHours = {};
-
+    var requestStartDate = '';
+    var requestEndDate = '';
+    var datesValid = true;
+    var countryCodes = []
 
     dates.forEach((item, index) => {
-        item.from = Date.parse(item.from);
-        item.to = Date.parse(item.to);
-        item.from = new Date(item.from)
-        item.to = new Date(item.to)
         let timeFrom = moment(item.from).format("hh:mm:ss a")
         let timeTo = moment(item.to).format("hh:mm:ss a")
         var dateFrom = moment(item.from).format("YYYY-MM-DD")
         var dateTo = moment(item.to).format("YYYY-MM-DD")
+        countryCodes.push(item.cc);
+        // console.log(dateFrom, dateTo)
+        // console.log(timeFrom, timeTo)
+        if (index === 0) requestStartDate = dateFrom
+        if (index === 0) requestEndDate = dateTo
+        if (dateFrom != requestStartDate) {
+            datesValid = false;
+
+        }
+        if (dateFrom !== dateTo) {
+            datesValid = false;
+        }
+        if (dateTo != requestEndDate) {
+            datesValid = false;
+        }
         recordedDates.push({
             dateFrom: dateFrom,
             timeFrom: timeFrom,
@@ -41,7 +74,33 @@ exports.checkForOverLaps = catchAsync(async (req, res, next) => {
             cc: item.cc
         })
     })
+    if (!datesValid) {
+        res.status(400).json({
+            status: "Fail",
+            message: 'Ooops! Dates on timestamps do not match',
+        });
+        return
+    }
+    // await Promise.all(countryCodes.map(async (element) => {
+    //     console.log(holidayList);
+    // }))
+    var holidayList = []
+
+    
+    for (const el of countryCodes) {
+        const holiday = await getHoliday(el);
+        
+        holiday.items.forEach(element => {
+            holidayList.push({
+                start: element.start.date,
+                end: element.end.date,
+            })
+        });
+        
+    }
+
     recordedDates.forEach((item, index) => {
+
         const availableInAm = [];
         const availableInPm = [];
         let countryCode = item.cc
@@ -297,8 +356,8 @@ exports.checkForOverLaps = catchAsync(async (req, res, next) => {
         status: "success",
         message: "The following time range is currently available",
         data: {
-            start_time: overlapStartTime,
-            end_time: overlapEndTime
+            start_time: overlapStartTime.toISOString(),
+            end_time: overlapEndTime.toISOString()
         }
     });
 });
