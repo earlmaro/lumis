@@ -19,15 +19,12 @@ exports.getAllTimezones = catchAsync(async (req, res, next) => {
 });
 
 exports.checkForOverLaps = catchAsync(async (req, res, next) => {
-    // console.log(req.body.dates);
     let dates = req.body.dates;
     const recordedDates = [];
     const allAvailableHours = {};
-    // const allAvailableInPm = [];
 
 
     dates.forEach((item, index) => {
-        // console.log(index, item)
         item.from = Date.parse(item.from);
         item.to = Date.parse(item.to);
         item.from = new Date(item.from)
@@ -60,17 +57,14 @@ exports.checkForOverLaps = catchAsync(async (req, res, next) => {
                 trailing = true
             }
             if (item.timeTo.slice(-2) === 'pm') {
-                // console.log('stop');
                 stop = 11;
                 spill = true
             }
-            // console.log(item.cc, start);
             if (item.timeFrom.substring(3, 5) != '00') {
                 availableInAm.push(`${start}:${item.timeFrom.substring(3, 5)}`)
                 start++
              }
             for (let i = start; i <= stop; i += 1) {
-                // console.log(i);
                 if (i != stop) {
                     availableInAm.push(i + ':00')
                     availableInAm.push(i + ':30')
@@ -82,7 +76,6 @@ exports.checkForOverLaps = catchAsync(async (req, res, next) => {
                             if (item.timeTo.substring(3, 5) != '00') availableInAm.push(`${i}:${item.timeTo.substring(3, 5)}`)
                         }
                         if (item.timeFrom.slice(-2) != item.timeTo.slice(-2) && spill) {
-                            // if (item.timeTo.substring(3, 5) != '00')
                                 availableInAm.push(`${i}:30`)
                         }
                     }
@@ -92,12 +85,10 @@ exports.checkForOverLaps = catchAsync(async (req, res, next) => {
             allAvailableHours[countryCode] = {
                 avalableHoursAm: availableInAm,
             }
-            // console.log(allAvailableHours);
         }
         if (item.timeFrom.slice(-2) === 'am' && item.timeTo.slice(-2) === 'pm') {
             start = 1
             availableInPm.push(12 + ':00')
-            // availableInPm.push(`12:${item.timeTo.substring(3, 5)}`)
             if (item.timeTo.substring(0, 2) == 12) {
                 availableInPm.push(`${12}:${item.timeTo.substring(3, 5)}`)
             } else {
@@ -112,13 +103,11 @@ exports.checkForOverLaps = catchAsync(async (req, res, next) => {
                         availableInPm.push(`${i}:30`)
                     } else {
                         if (item.timeFrom.substring(3, 5) != '00') availableInPm.push(`${i}:${item.timeTo.substring(3, 5)}`)
-                        // if (item.timeFrom.substring(3, 5) == '00') availableInPm.push(`${i}:00`)
                     }
 
                 }
             }
             allAvailableHours[countryCode].avalableHoursPm = availableInPm
-            // console.log(allAvailableHours);
         }
 
         if (item.timeFrom.slice(-2) === 'pm') {
@@ -130,19 +119,15 @@ exports.checkForOverLaps = catchAsync(async (req, res, next) => {
                 stop = parseInt(item.timeTo.substring(0, 2), 10);
             }
             if (item.timeTo.slice(-2) === 'am') {
-                // console.log('stop');
                 stop = 11;
                 spill = true
             }
-            // console.log(item.cc, start);
             if (item.timeFrom.substring(3, 5) != '00') {
-                // availableInAm.push(start)
                 availableInAm.push(`${start}:${item.timeFrom.substring(3, 5)}`)
                 start++
             }
 
             for (let i = start; i <= stop; i += 1) {
-                // console.log(i);
                 if (i != stop) {
                     availableInPm.push(i + ':00')
                     availableInPm.push(i + ':30')
@@ -161,21 +146,6 @@ exports.checkForOverLaps = catchAsync(async (req, res, next) => {
                 }
             }
             
-            // for (let i = start; i <= stop; i += 1) {
-            //     // console.log(i);
-            //     availableInPm.push(i + ':00')
-            //     if (spill || trailing) {
-            //         if (item.timeFrom.slice(-2) == item.timeTo.slice(-2)) {
-            //             availableInPm.push(`${i}:${item.timeTo.substring(3, 5)}`)
-
-            //         } else {
-            //             if (i != stop) availableInPm.push(i + ':30')
-            //         }
-            //     } else {
-            //         if (i != stop) availableInPm.push(i + ':30')
-            //     }
-            // }
-            // console.log(item.cc);
             if (allAvailableHours[countryCode].avalableHoursPm) {
                 allAvailableHours[countryCode].avalableHoursPm = [...allAvailableHours[countryCode].avalableHoursPm, ...avalableHoursPm]
             } else {
@@ -190,64 +160,38 @@ exports.checkForOverLaps = catchAsync(async (req, res, next) => {
             } else {
                 availableInAm.push(12 + ':30')
             }
-            // availableInAm.push(`12:${item.timeTo.substring(3, 5)}`)
 
             stop = parseInt(item.timeTo.substring(0, 2), 10)
             if (stop != 12) {
                 for (let i = start; i <= stop; i += 1) {
                     availableInAm.push(i + ':00')
-                    // console.log(stop);
-                    // if (i != stop) availableInAm.push(`${i}:${item.timeTo.substring(3, 5)}`)
                     if (i != stop) {
                         availableInAm.push(`${i}:30`)
                     } else {
                         if (item.timeFrom.substring(3, 5) != '00') availableInAm.push(`${i}:${item.timeTo.substring(3, 5)}`)
-                        // if (item.timeFrom.substring(3, 5) == '00') availableInAm.push(`${i}:00`)
                     }
-                    // if (i != stop) availableInAm.push(i + ':30')
                 }
             }
             allAvailableHours[countryCode].availableInAm = availableInAm
         }
     })
-    // console.log(allAvailableHours);
-    // console.log(recordedDates)
 
-    
-    // console.log(allAvailableHours);
     let amMerger = []
     let pmMerger = []
     const numberOfTimestamps = Object.keys(allAvailableHours).length
     
     
     Object.keys(allAvailableHours).forEach(function (key) {
-        // amMerger = [...amMerger, ...allAvailableHours[key].avalableHoursAm]
         if (allAvailableHours[key].avalableHoursAm) amMerger = [...amMerger, ...allAvailableHours[key].avalableHoursAm]
         if (allAvailableHours[key].avalableHoursPm) pmMerger = [...pmMerger, ...allAvailableHours[key].avalableHoursPm]
     });
     
-    // console.log(pmMerger);
-    // console.log(amMerger);
-    // console.log(recordedDates)
-
-    // return
     let pmOverLap = [];
     let amOverLap = [];
     var amOverlapCount = 0;
     var pmOverlapCount = 0;
     
-    // const pmOccurrenceCokunter = async (el) => {
-    //     for (let i = 0; i < pmMerger.length; i += 1) {
-    //         if(pmMerger[i] == el){
-    //             pmOverlapCount++
-    //         };
-    //         // console.log(overlapCount, pmMerger[i]);
-    //         if (pmOverlapCount === numberOfTimestamps) {
-    //             pmOverLap.push(pmMerger[i])
-    //         }
-    //     }
-        
-    // };
+
     const pmOccurrenceCounter = async (el) => {
         for (let i = 0; i < pmMerger.length; i += 1) {
             if (pmMerger[i] == el) {
@@ -274,30 +218,87 @@ exports.checkForOverLaps = catchAsync(async (req, res, next) => {
     for (let i = 0; i < amMerger.length; i += 1) {
         amOverlapCount = 0;
         amOccurrenceCounter(amMerger[i]);
-        // console.log(amMerger[i])
     }
 
     let uniqueAm = [...new Set(amOverLap)];
     let uniquePm = [...new Set(pmOverLap)];
 
+    let arrayUniquePm = [...uniquePm];
+    let arrayUniqueAm = [...uniqueAm];
 
-    console.log(uniqueAm);
-    console.log(uniquePm);
-
-
-
+    arrayUniquePm = arrayUniquePm.sort((a, b) => parseInt(a.substring(0, 2)) - parseInt(b.substring(0, 2)));
+    arrayUniqueAm = arrayUniqueAm.sort((a, b) => parseInt(a.substring(0, 2)) - parseInt(b.substring(0, 2)));
+    for (let i = 0; i < arrayUniqueAm.length; i++){
+        if (arrayUniqueAm[i].split(":")[0].length == 1) {
+            let left = arrayUniqueAm[i].split(":")[0]
+            let right = arrayUniqueAm[i].split(":")[1]
+            left = '0' + left
+            let fullString = left + ':' + right
+            arrayUniqueAm[i] = fullString
+        }
+    }
+    for (let i = 0; i < arrayUniquePm.length; i++) {
+        if (arrayUniquePm[i].split(":")[0].length == 1) {
+            let left = arrayUniquePm[i].split(":")[0]
+            let right = arrayUniquePm[i].split(":")[1]
+            left = '0' + left
+            let fullString = left + ':' + right
+            arrayUniquePm[i] = fullString
+        }
+    }
     
-    console.log(recordedDates)
+    let overlapStartTime = ''
+    let overlapEndTime = ''
+    let overlapDate = '2022-05-02'
 
-    const doc = 'req';
-    if (!doc) {
-        return next(new AppError("No document found", 404));
+    // arrayUniquePm = []
+    // arrayUniqueAm = []
+
+
+    if (arrayUniquePm.length < 1 && arrayUniqueAm.length < 1) {
+        res.status(400).json({
+            status: "Fail",
+            message: 'Ooops! your selected time range is unavailable',
+        });
+    }
+
+    if (arrayUniquePm.length !== 0 && arrayUniqueAm.length === 0) {
+        if (arrayUniquePm.length === 1) {
+            res.status(400).json({
+                status: "Fail",
+                message: 'Ooops! your selected time range is unavailable',
+            });
+        }
+        overlapStartTime = moment(overlapDate + ' ' + arrayUniquePm[0]);
+        overlapEndTime = moment(overlapDate + ' ' + arrayUniquePm[arrayUniquePm.length - 1]);
+    }
+    
+    if (arrayUniquePm.length === 0 && arrayUniqueAm.length !== 0) {
+        if (arrayUniqueAm.length === 1) {
+            res.status(400).json({
+                status: "Fail",
+                message: 'Ooops! your selected time range is unavailable',
+            });
+        }
+        overlapStartTime = moment(overlapDate + ' ' + arrayUniqueAm[0]);
+        overlapEndTime = moment(overlapDate + ' ' + arrayUniqueAm[arrayUniqueAm.length - 1]);
+    }
+
+    if (arrayUniquePm.length > 0 && arrayUniqueAm.length > 0) {
+
+        overlapStartTime = moment(overlapDate + ' ' + arrayUniqueAm[0]);
+        overlapEndTime = moment(overlapDate + ' ' + arrayUniquePm[arrayUniquePm.length - 1]);
+    }
+    
+    if (!overlapStartTime || !overlapEndTime) {
+        return next(new AppError("No time range found", 404));
     }
     res.status(200).json({
         status: "success",
-        message: "Documents fetched!",
+        message: "The following time range is currently available",
         data: {
-            doc
+            start_time: overlapStartTime,
+            end_time: overlapEndTime
         }
     });
 });
