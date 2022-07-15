@@ -2,7 +2,6 @@ const catchAsync = require("../utilis/catchAsync");
 const AppError = require("../utilis/appError");
 const Regions = require("../utilis/regions");
 
-let timezone = require("../models/timezone.model");
 const fetch = require("node-fetch");
 
 
@@ -21,20 +20,21 @@ exports.getAllTimezones = catchAsync(async (req, res, next) => {
         }
     });
 });
+// function to get holidays from google calendar
 const getHoliday = async (zone) => {
-    // console.log(zone)
     const BASE_CALENDAR_URL = "https://www.googleapis.com/calendar/v3/calendars";
-    const BASE_CALENDAR_ID_FOR_PUBLIC_HOLIDAY =
-        "holiday@group.v.calendar.google.com"; // Calendar Id. This is public but apparently not documented anywhere officialy.
+    const BASE_CALENDAR_ID_FOR_PUBLIC_HOLIDAY = "holiday@group.v.calendar.google.com"; // Calendar Id. This is public but apparently not documented anywhere officialy.
     const API_KEY = "AIzaSyAuS2w0bGLnH_4smxcfEQpW15wODksXk-c";
     const CALENDAR_REGION = `en.${zone}`;
 
     const url = `${BASE_CALENDAR_URL}/${CALENDAR_REGION}%23${BASE_CALENDAR_ID_FOR_PUBLIC_HOLIDAY}/events?key=${API_KEY}`
-    const response = await fetch(url)
-    const json = await response.json()
-
-    return json
-
+    try {
+        const response = await fetch(url).catch((err) => console.log(err));
+        const json = await response.json();
+        return json;
+    } catch (error) {
+        return error;
+    }
 };
 
 exports.checkForOverLaps = catchAsync(async (req, res, next) => {
@@ -44,21 +44,28 @@ exports.checkForOverLaps = catchAsync(async (req, res, next) => {
     var requestStartDate = '';
     var requestEndDate = '';
     var datesValid = true;
-    var countryCodes = []
+    var countryCodes = [];
 
+    Object.keys(allAvailableHours).length
+    if (dates.length === 0 || dates.length === 1) {
+        res.status(400).json({
+            status: "Fail",
+            message: 'Ooops! Invalid request',
+        });
+        return;
+    }
+
+    // process and validate request data
     dates.forEach((item, index) => {
-        let timeFrom = moment(item.from).format("hh:mm:ss a")
-        let timeTo = moment(item.to).format("hh:mm:ss a")
-        var dateFrom = moment(item.from).format("YYYY-MM-DD")
-        var dateTo = moment(item.to).format("YYYY-MM-DD")
+        let timeFrom = moment(item.from).format("hh:mm:ss a");
+        let timeTo = moment(item.to).format("hh:mm:ss a");
+        var dateFrom = moment(item.from).format("YYYY-MM-DD");
+        var dateTo = moment(item.to).format("YYYY-MM-DD");
         countryCodes.push(item.cc);
-        // console.log(dateFrom, dateTo)
-        // console.log(timeFrom, timeTo)
-        if (index === 0) requestStartDate = dateFrom
-        if (index === 0) requestEndDate = dateTo
+        if (index === 0) requestStartDate = dateFrom;
+        if (index === 0) requestEndDate = dateTo;
         if (dateFrom != requestStartDate) {
             datesValid = false;
-
         }
         if (dateFrom !== dateTo) {
             datesValid = false;
@@ -66,45 +73,77 @@ exports.checkForOverLaps = catchAsync(async (req, res, next) => {
         if (dateTo != requestEndDate) {
             datesValid = false;
         }
+        // create an array of objects to hold processed and validated request data
         recordedDates.push({
             dateFrom: dateFrom,
             timeFrom: timeFrom,
             dateTo: dateTo,
             timeTo: timeTo,
             cc: item.cc
-        })
+        });
     })
+    // response if request data fails validation
     if (!datesValid) {
         res.status(400).json({
             status: "Fail",
             message: 'Ooops! Dates on timestamps do not match',
         });
-        return
+        return;
     }
-    // await Promise.all(countryCodes.map(async (element) => {
-    //     console.log(holidayList);
-    // }))
-    var holidayList = []
+    var holidayList = [];
+    var fetchHolidayFailed = false;
 
-    
+    // fetch holidays for requested regions into an array
     for (const el of countryCodes) {
         const holiday = await getHoliday(el);
-        
-        holiday.items.forEach(element => {
-            holidayList.push({
-                start: element.start.date,
-                end: element.end.date,
-            })
-        });
-        
+        if (holiday.error) {
+            fetchHolidayFailed = true;
+        }
+
+        if (!fetchHolidayFailed) {
+            holiday.items.forEach(element => {
+                holidayList.push({
+                    start: element.start.date,
+                    end: element.end.date,
+                })
+            });
+        }
     }
 
-    recordedDates.forEach((item, index) => {
+    if (fetchHolidayFailed) {
+        res.status(400).json({
+            status: "Fail",
+            message: 'Ooops! Unable to fetch holiday list',
+        });
+        return
+    }
+    
+    var holidayStatus = false;
 
+    // check if the requested date is a holiday in any of the requested regions
+    if (holidayList.length !== 0) {
+        holidayList.forEach(item => {
+            if (item.start === requestStartDate) {
+                holidayStatus = true;
+            }
+        })
+    }
+    // response if the date is a holiday
+    if (holidayStatus) {
+        res.status(400).json({
+            status: "Fail",
+            message: 'Ooops! there seems to be an holiday for the selected day',
+        });
+        return;
+    }
+
+//     looping processed array of objects to get request time and break
+//     them down into an array of hours e.g 1am => 4am amounts to[1: 00, 1: 30, 2: 00, 2: 30, 3: 00, 3: 30, 4: 00]for am
+//    and another array for pm.
+    recordedDates.forEach((item, index) => {
         const availableInAm = [];
         const availableInPm = [];
-        let countryCode = item.cc
-        
+        let countryCode = item.cc;
 
         if (item.timeFrom.slice(-2) === 'am') {
             let spill = false;
@@ -113,60 +152,62 @@ exports.checkForOverLaps = catchAsync(async (req, res, next) => {
             let trailing = false;
             if (item.timeTo.slice(-2) === 'am') {
                 stop = parseInt(item.timeTo.substring(0, 2), 10);
-                trailing = true
+                trailing = true;
             }
             if (item.timeTo.slice(-2) === 'pm') {
                 stop = 11;
-                spill = true
+                spill = true;
             }
             if (item.timeFrom.substring(3, 5) != '00') {
-                availableInAm.push(`${start}:${item.timeFrom.substring(3, 5)}`)
-                start++
+                availableInAm.push(`${start}:${item.timeFrom.substring(3, 5)}`);
+                start++;
              }
             for (let i = start; i <= stop; i += 1) {
                 if (i != stop) {
-                    availableInAm.push(i + ':00')
-                    availableInAm.push(i + ':30')
+                    availableInAm.push(i + ':00');
+                    availableInAm.push(i + ':30');
                  }
                 if (i == stop) {
-                    availableInAm.push(i + ':00')
+                    availableInAm.push(i + ':00');
                     if (spill || trailing) {
                         if (item.timeFrom.slice(-2) == item.timeTo.slice(-2) && trailing) {
-                            if (item.timeTo.substring(3, 5) != '00') availableInAm.push(`${i}:${item.timeTo.substring(3, 5)}`)
+                            if (item.timeTo.substring(3, 5) != '00') availableInAm.push(`${i}:${item.timeTo.substring(3, 5)}`);
                         }
                         if (item.timeFrom.slice(-2) != item.timeTo.slice(-2) && spill) {
-                                availableInAm.push(`${i}:30`)
+                            availableInAm.push(`${i}:30`);
                         }
                     }
 
                 }
             }
+            // updating an array of objects with the available hours in am for every region requested
             allAvailableHours[countryCode] = {
                 avalableHoursAm: availableInAm,
-            }
+            };
         }
         if (item.timeFrom.slice(-2) === 'am' && item.timeTo.slice(-2) === 'pm') {
-            start = 1
-            availableInPm.push(12 + ':00')
+            start = 1;
+            availableInPm.push(12 + ':00');
             if (item.timeTo.substring(0, 2) == 12) {
-                availableInPm.push(`${12}:${item.timeTo.substring(3, 5)}`)
+                availableInPm.push(`${12}:${item.timeTo.substring(3, 5)}`);
             } else {
-                availableInPm.push(12 + ':30')
+                availableInPm.push(12 + ':30');
             }
 
             stop = parseInt(item.timeTo.substring(0, 2), 10)
             if (stop != 12) {
                 for (let i = start; i <= stop; i += 1) {
-                    availableInPm.push(i + ':00')
+                    availableInPm.push(i + ':00');
                     if (i != stop) {
-                        availableInPm.push(`${i}:30`)
+                        availableInPm.push(`${i}:30`);
                     } else {
-                        if (item.timeFrom.substring(3, 5) != '00') availableInPm.push(`${i}:${item.timeTo.substring(3, 5)}`)
+                        if (item.timeFrom.substring(3, 5) != '00') availableInPm.push(`${i}:${item.timeTo.substring(3, 5)}`);
                     }
 
-                }
+                };
             }
-            allAvailableHours[countryCode].avalableHoursPm = availableInPm
+            // updating an array of objects with the available hours in pm for every region requested
+            allAvailableHours[countryCode].avalableHoursPm = availableInPm;
         }
 
         if (item.timeFrom.slice(-2) === 'pm') {
@@ -179,67 +220,67 @@ exports.checkForOverLaps = catchAsync(async (req, res, next) => {
             }
             if (item.timeTo.slice(-2) === 'am') {
                 stop = 11;
-                spill = true
+                spill = true;
             }
             if (item.timeFrom.substring(3, 5) != '00') {
-                availableInAm.push(`${start}:${item.timeFrom.substring(3, 5)}`)
-                start++
+                availableInAm.push(`${start}:${item.timeFrom.substring(3, 5)}`);
+                start++;
             }
 
             for (let i = start; i <= stop; i += 1) {
                 if (i != stop) {
-                    availableInPm.push(i + ':00')
-                    availableInPm.push(i + ':30')
+                    availableInPm.push(i + ':00');
+                    availableInPm.push(i + ':30');
                 }
                 if (i == stop) {
-                    availableInPm.push(i + ':00')
+                    availableInPm.push(i + ':00');
                     if (spill || trailing) {
                         if (item.timeFrom.slice(-2) == item.timeTo.slice(-2) && trailing) {
-                            if (item.timeTo.substring(3, 5) != '00') availableInPm.push(`${i}:${item.timeTo.substring(3, 5)}`)
+                            if (item.timeTo.substring(3, 5) != '00') availableInPm.push(`${i}:${item.timeTo.substring(3, 5)}`);
                         }
                         if (item.timeFrom.slice(-2) != item.timeTo.slice(-2) && spill) {
-                            // if (item.timeTo.substring(3, 5) != '00')
-                            availableInPm.push(`${i}:30`)
+                            availableInPm.push(`${i}:30`);
                         }
                     }
                 }
             }
-            
+            // updating an array of objects with the available hours in pm for every region requested
             if (allAvailableHours[countryCode].avalableHoursPm) {
-                allAvailableHours[countryCode].avalableHoursPm = [...allAvailableHours[countryCode].avalableHoursPm, ...avalableHoursPm]
+                allAvailableHours[countryCode].avalableHoursPm = [...allAvailableHours[countryCode].avalableHoursPm, ...avalableHoursPm];
             } else {
-                allAvailableHours[countryCode].avalableHoursPm = avalableHoursPm
+                allAvailableHours[countryCode].avalableHoursPm = avalableHoursPm;
             }
         }
         if (item.timeFrom.slice(-2) === 'pm' && item.timeTo.slice(-2) === 'am') {
-            start = 1
-            availableInAm.push(12 + ':00')
+            start = 1;
+            availableInAm.push(12 + ':00');
             if (item.timeTo.substring(0, 2) == 12) {
-                availableInAm.push(`${12}:${item.timeTo.substring(3, 5)}`)
+                availableInAm.push(`${12}:${item.timeTo.substring(3, 5)}`);
             } else {
-                availableInAm.push(12 + ':30')
+                availableInAm.push(12 + ':30');
             }
-
-            stop = parseInt(item.timeTo.substring(0, 2), 10)
+            stop = parseInt(item.timeTo.substring(0, 2), 10);
             if (stop != 12) {
                 for (let i = start; i <= stop; i += 1) {
-                    availableInAm.push(i + ':00')
+                    availableInAm.push(i + ':00');
                     if (i != stop) {
-                        availableInAm.push(`${i}:30`)
+                        availableInAm.push(`${i}:30`);
                     } else {
-                        if (item.timeFrom.substring(3, 5) != '00') availableInAm.push(`${i}:${item.timeTo.substring(3, 5)}`)
+                        if (item.timeFrom.substring(3, 5) != '00') availableInAm.push(`${i}:${item.timeTo.substring(3, 5)}`);
                     }
                 }
             }
-            allAvailableHours[countryCode].availableInAm = availableInAm
+            // updating an array of objects with the available hours in am for every region requested
+            allAvailableHours[countryCode].availableInAm = availableInAm;
         }
     })
 
-    let amMerger = []
-    let pmMerger = []
-    const numberOfTimestamps = Object.keys(allAvailableHours).length
+    let amMerger = [];
+    let pmMerger = [];
+    // number of dates in request(i.e number of users looking to collaborate)
+    const numberOfTimestamps = Object.keys(allAvailableHours).length;
     
-    
+     // merging all available hours into one array and saving them into an array object
     Object.keys(allAvailableHours).forEach(function (key) {
         if (allAvailableHours[key].avalableHoursAm) amMerger = [...amMerger, ...allAvailableHours[key].avalableHoursAm]
         if (allAvailableHours[key].avalableHoursPm) pmMerger = [...pmMerger, ...allAvailableHours[key].avalableHoursPm]
@@ -250,68 +291,74 @@ exports.checkForOverLaps = catchAsync(async (req, res, next) => {
     var amOverlapCount = 0;
     var pmOverlapCount = 0;
     
-
+    // processing item in pm merged array to check if the number of times it occurs is equal to the number of dates in the request
     const pmOccurrenceCounter = async (el) => {
         for (let i = 0; i < pmMerger.length; i += 1) {
             if (pmMerger[i] == el) {
-                pmOverlapCount++
-                if (pmOverlapCount === numberOfTimestamps) pmOverLap.push(pmMerger[i])
+                pmOverlapCount++;
+                if (pmOverlapCount === numberOfTimestamps) pmOverLap.push(pmMerger[i]);
             };
         }
 
     };
+    // processing item in am merged array to check if the number of times it occurs is equal to the number of dates in the request
     const amOccurrenceCounter = async (el) => {
         for (let i = 0; i < amMerger.length; i += 1) {
             if (amMerger[i] == el) {
-                amOverlapCount++
-                if (amOverlapCount === numberOfTimestamps) amOverLap.push(amMerger[i])
+                amOverlapCount++;
+                if (amOverlapCount === numberOfTimestamps) amOverLap.push(amMerger[i]);
             };
         }
 
     };
 
+    // sending items in merged array for processing
     for (let i = 0; i < pmMerger.length; i += 1) {
         pmOverlapCount = 0;
         pmOccurrenceCounter(pmMerger[i]);
     }
+    // sending items in merged array for processing
     for (let i = 0; i < amMerger.length; i += 1) {
         amOverlapCount = 0;
         amOccurrenceCounter(amMerger[i]);
     }
 
+    // extracting unique values from results from processing merged arrays using a set
     let uniqueAm = [...new Set(amOverLap)];
     let uniquePm = [...new Set(pmOverLap)];
 
+    // converting back into an array
     let arrayUniquePm = [...uniquePm];
     let arrayUniqueAm = [...uniqueAm];
 
+    //sorting the array
     arrayUniquePm = arrayUniquePm.sort((a, b) => parseInt(a.substring(0, 2)) - parseInt(b.substring(0, 2)));
     arrayUniqueAm = arrayUniqueAm.sort((a, b) => parseInt(a.substring(0, 2)) - parseInt(b.substring(0, 2)));
+
+    // formatting array items
     for (let i = 0; i < arrayUniqueAm.length; i++){
         if (arrayUniqueAm[i].split(":")[0].length == 1) {
-            let left = arrayUniqueAm[i].split(":")[0]
-            let right = arrayUniqueAm[i].split(":")[1]
-            left = '0' + left
-            let fullString = left + ':' + right
-            arrayUniqueAm[i] = fullString
+            let left = arrayUniqueAm[i].split(":")[0];
+            let right = arrayUniqueAm[i].split(":")[1];
+            left = '0' + left;
+            let fullString = left + ':' + right;
+            arrayUniqueAm[i] = fullString;
         }
     }
+    // formatting array items
     for (let i = 0; i < arrayUniquePm.length; i++) {
         if (arrayUniquePm[i].split(":")[0].length == 1) {
-            let left = arrayUniquePm[i].split(":")[0]
-            let right = arrayUniquePm[i].split(":")[1]
-            left = '0' + left
-            let fullString = left + ':' + right
-            arrayUniquePm[i] = fullString
+            let left = arrayUniquePm[i].split(":")[0];
+            let right = arrayUniquePm[i].split(":")[1];
+            left = '0' + left;
+            let fullString = left + ':' + right;
+            arrayUniquePm[i] = fullString;
         }
     }
     
-    let overlapStartTime = ''
-    let overlapEndTime = ''
-    let overlapDate = '2022-05-02'
-
-    // arrayUniquePm = []
-    // arrayUniqueAm = []
+    let overlapStartTime = '';
+    let overlapEndTime = '';
+    let overlapDate = requestStartDate;
 
 
     if (arrayUniquePm.length < 1 && arrayUniqueAm.length < 1) {
